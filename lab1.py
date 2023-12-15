@@ -31,3 +31,19 @@ def convolution2D(input_tensor, weight, bias=None, stride=1, padding=0, dilation
 
     return output_tensor
 
+# import torch
+
+# def convolution2D(input_tensor, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
+#     # Преобразование входных данных в тензоры PyTorch
+#     input_tensor = torch.tensor(input_tensor, dtype=torch.float32)
+#     weight = torch.tensor(weight, dtype=torch.float32)
+#     if bias is not None:
+#         bias = torch.tensor(bias, dtype=torch.float32)
+
+#     # Применение свертки с использованием PyTorch
+#     output_tensor = torch.nn.functional.conv2d(input_tensor, weight, bias, stride, padding, dilation, groups)
+
+#     # Преобразование обратно в массив NumPy
+#     output_tensor = output_tensor.numpy()
+
+#     return output_tensor
