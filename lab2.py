@@ -1,35 +1,63 @@
+import numpy as np
 import torch
-import torch.nn.functional as F
+import torch.nn as nn
 
-class Convolution3DModule(torch.nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, activation_fn=None):
-        super(Convolution3DModule, self).__init__()
-        self.conv3d = torch.nn.Conv3d(in_channels, out_channels, kernel_size, stride=stride, padding=padding)
-        self.activation_fn = activation_fn
+def conv3d_nhwdc(input_volume, kernel, stride=1, padding=0):
+    """
+    3D-свертка с распределением 'NHWDC', реализованная с использованием NumPy.
 
-    def forward(self, x):
-        x = self.conv3d(x)
-        if self.activation_fn is not None:
-            x = self.activation_fn(x)
-        return x
+    Параметры:
+    - input_volume: Входной 5D тензор с формой (batch_size, depth, height, width, channels)
+    - kernel: 5D тензор ядра с формой (out_channels, kernel_depth, kernel_height, kernel_width, in_channels)
+    - stride: Шаг операции свертки
+    - padding: Заполнение для операции свертки
 
-def Convolution3D(input, weight, bias=None, stride=1, padding=0, activation_fn=None):
-    # Проверка размерностей входных данных
-    if input.dim() != 5 or weight.dim() != 5:
-        raise ValueError("Input and weight must be 5-dimensional")
+    Возвращает:
+    - output_volume: Выходной 5D тензор после свертки
+    """
+    batch_size, in_depth, in_height, in_width, in_channels = input_volume.shape
+    out_channels, kernel_depth, kernel_height, kernel_width, _ = kernel.shape
 
-    # Изменение порядка размерностей для Layout NHWDC
-    input = input.permute(0, 4, 1, 2, 3).contiguous()
-    weight = weight.permute(4, 3, 0, 1, 2).contiguous()
+    # Вычисляем размеры выходного тензора
+    out_depth = (in_depth - kernel_depth + 2 * padding) // stride + 1
+    out_height = (in_height - kernel_height + 2 * padding) // stride + 1
+    out_width = (in_width - kernel_width + 2 * padding) // stride + 1
 
-    # Применение операции свертки 3D с использованием PyTorch
-    output = F.conv3d(input, weight, bias, stride=stride, padding=padding)
+    # Добавляем к входному тензору паддинг
+    padded_input = np.pad(input_volume, ((0, 0), (padding, padding), (padding, padding), (padding, padding), (0, 0)), mode='constant')
 
-    # Изменение порядка размерностей обратно
-    output = output.permute(0, 2, 3, 4, 1).contiguous()
+    # Инициализируем выходной тензор
+    output_volume = np.zeros((batch_size, out_depth, out_height, out_width, out_channels))
 
-    # Применение функции активации, если она предоставлена
-    if activation_fn is not None:
-        output = activation_fn(output)
+    # Выполняем 3D-свертку
+    for d in range(0, in_depth, stride):
+        for h in range(0, in_height, stride):
+            for w in range(0, in_width, stride):
+                input_patch = padded_input[:, d:d+kernel_depth, h:h+kernel_height, w:w+kernel_width, :]
+                output_patch = np.sum(input_patch * kernel, axis=(1, 2, 3, 4), keepdims=True)
+                output_volume[:, d//stride, h//stride, w//stride, :] = output_patch.squeeze()
 
-    return output
+    return output_volume
+
+
+def compare_results(input_tensor_np, kernel_np):
+    # Применяем 3D-свертку
+    output_tensor_np = conv3d_nhwdc(input_tensor_np, kernel_np, stride=1, padding=1)
+
+    # Применяем 3D-свертку PyTorch
+    conv3d_torch = nn.Conv3d(3, 32, kernel_size=3, stride=1, padding=1, bias=False)
+    output_tensor_torch = conv3d_torch(torch.tensor(input_tensor_np, dtype=torch.float32).permute(0, 4, 1, 2, 3))
+
+    # Выводим размеры выходных тензоров
+    print("Размер выходного тензора (NumPy):", output_tensor_np.shape)
+    print("Размер выходного тензора (PyTorch):", output_tensor_torch.permute(0, 2, 3, 4, 1).shape)
+
+    # Сравниваем значения
+    print("Тензоры идентичны:", np.allclose(output_tensor_np, output_tensor_torch.detach().permute(0, 2, 3, 4, 1).numpy()))
+
+
+# Тест
+input_tensor_np = np.random.randn(32, 10, 128, 128, 3).astype(np.float32)
+kernel_np = np.random.randn(32, 3, 3, 3, 3).astype(np.float32)
+compare_results(input_tensor_np, kernel_np)
+print("\n")
